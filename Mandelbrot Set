@@ -1,0 +1,168 @@
+#include <SFML/Graphics.hpp>
+#include "vector"
+
+using namespace std;
+
+const int WIDTH = 800;
+const int HEIGHT = 800;
+const int MAX_ITER = 50;
+int version = 0;
+double mORj = 0;
+
+class Complex {
+public:
+    Complex(): re_(0), im_(0) {}
+    Complex(double re, double im): re_(re), im_(im) {}
+
+    double getRe() {return re_;}
+    double getIm() {return  im_;}
+
+    Complex operator+(Complex& other) {
+        return Complex(re_ + other.re_, im_ + other.im_);
+    }
+    Complex operator*(Complex& other) {
+        return Complex(re_ * other.re_ - im_ * other.im_, re_ * other.im_ + im_ * other.re_);
+    }
+    double module() {
+        return re_ * re_ + im_ * im_;
+    }
+private:
+    double re_;
+    double im_;
+};
+
+sf::Color color(int cnt) {
+    if (cnt == MAX_ITER) return sf::Color::Black;
+    if (mORj == 0) return sf::Color((cnt * 15 / MAX_ITER) % 255, (cnt * 5 / MAX_ITER) % 255,  cnt * 255 / MAX_ITER - 220);
+    return sf::Color((cnt * 41) % 255, (cnt * 31) % 255,  cnt * 13 % 255);
+}
+
+
+int checkMon(Complex c) {
+    Complex z;
+    int cnt = 0;
+    while (z.module() <= 4 and cnt < MAX_ITER) {
+        z = z * z + c;
+        cnt++;
+    }
+    return cnt;
+}
+int checkJul(Complex z) {
+    Complex c(-0.2, 0.75);
+    int cnt = 0;
+    while (z.module() <= 4 and cnt < MAX_ITER) {
+        z = z * z + c;
+        cnt++;
+    }
+    return cnt;
+}
+
+void draw(sf::Image& image, double x_min, double x_max, double y_min, double y_max) {
+    for (int x = 0; x < WIDTH; x++) {
+        for (int y = 0; y < HEIGHT; y++) {
+            double re = x_min + x * (x_max - x_min) / WIDTH;
+            double im = y_min + y * (y_max - y_min) / HEIGHT;
+            Complex c(re, im);
+            int cnt;
+            if (mORj == 0)
+                cnt = checkMon(c);
+            else
+                cnt = checkJul(c);
+            image.setPixel(x, y, color(cnt));
+        }
+    }
+}
+
+int main() {
+    sf::RenderWindow window(sf::VideoMode(WIDTH, HEIGHT), "Mandelbrot set");
+    sf::Image image;
+    image.create(WIDTH, HEIGHT);
+
+    double x_min = -2.1, x_max = 1.4, y_min = -1.75, y_max = 1.75;
+    if (mORj != 0) {
+        x_min *= mORj; x_max *= mORj; y_min *= mORj; y_max *= mORj;
+    }
+    vector<pair<double, double>> prev_x{pair{x_min, x_max}};
+    vector<pair<double, double>> prev_y{pair{y_min, y_max}};
+
+    draw(image, x_min, x_max, y_min, y_max);
+
+    sf::Texture texture;
+    texture.loadFromImage(image);
+    sf::Sprite sprite(texture);
+
+    bool selecting = false;
+    sf::Vector2i startPos, endPos;
+
+    while (window.isOpen()) {
+        sf::Event event{};
+        while (window.pollEvent(event)) {
+            if (event.type == sf::Event::Closed)
+                window.close();
+
+            if (event.type == sf::Event::KeyPressed) {
+                if (event.key.code == sf::Keyboard::Enter and version > 0) {
+                    x_min = prev_x[version].first;
+                    x_max = prev_x[version].second;
+                    y_min = prev_y[version].first;
+                    y_max = prev_y[version--].second;
+                    prev_x.erase(prev_x.end());
+                    prev_y.erase(prev_y.end());
+
+                    draw(image, x_min, x_max, y_min, y_max);
+                    texture.loadFromImage(image);
+                }
+            }
+
+            if (event.type == sf::Event::MouseButtonPressed and event.mouseButton.button == sf::Mouse::Left) {
+                startPos = sf::Mouse::getPosition(window);
+                endPos = startPos;
+                selecting = true;
+            }
+
+            if (event.type == sf::Event::MouseMoved and selecting) {
+                endPos = sf::Mouse::getPosition(window);
+            }
+
+            if (event.type == sf::Event::MouseButtonReleased and selecting) {
+                selecting = false;
+                int size = std::min(endPos.x - startPos.x, endPos.y - startPos.y);
+                int x_start = std::min(startPos.x, endPos.x);
+                int y_start = std::min(startPos.y, endPos.y);
+
+                double new_x_min = x_min + (x_max - x_min) * x_start / WIDTH;
+                double new_x_max = x_min + (x_max - x_min) * (x_start + size) / WIDTH;
+                double new_y_min = y_min + (y_max - y_min) * y_start / HEIGHT;
+                double new_y_max = y_min + (y_max - y_min) * (y_start + size) / HEIGHT;
+
+                prev_x.push_back({x_min, x_max});
+                prev_y.push_back({y_min, y_max});
+                version++;
+
+                x_min = new_x_min;
+                x_max = new_x_max;
+                y_min = new_y_min;
+                y_max = new_y_max;
+
+                draw(image, x_min, x_max, y_min, y_max);
+                texture.loadFromImage(image);
+            }
+        }
+
+        window.clear();
+        window.draw(sprite);
+
+        if (selecting) {
+            sf::RectangleShape selectionBox;
+            selectionBox.setPosition(min(startPos.x, endPos.x),min(startPos.y, endPos.y));
+            int size = min(endPos.x - startPos.x, endPos.y - startPos.y);
+            selectionBox.setSize(sf::Vector2f(size, size));
+            selectionBox.setFillColor(sf::Color(255, 0, 0, 100));
+            window.draw(selectionBox);
+        }
+
+        window.display();
+    }
+
+    return 0;
+}
